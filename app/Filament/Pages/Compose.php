@@ -48,8 +48,10 @@ class Compose extends Page implements HasForms
                 Forms\Components\TextInput::make('subject')
                     ->required()
                     ->maxLength(998),
-                Forms\Components\RichEditor::make('body')
+                Forms\Components\Textarea::make('body')
+                    ->label('Message')
                     ->required()
+                    ->rows(8)
                     ->columnSpanFull(),
                 Forms\Components\FileUpload::make('attachments')
                     ->multiple()

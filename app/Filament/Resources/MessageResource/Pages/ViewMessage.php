@@ -44,9 +44,10 @@ class ViewMessage extends ViewRecord
                     ->required(),
                 Forms\Components\TextInput::make('cc'),
                 Forms\Components\TextInput::make('bcc'),
-                Forms\Components\RichEditor::make('html')
+                Forms\Components\Textarea::make('html')
                     ->label('Reply')
-                    ->required(),
+                    ->required()
+                    ->rows(8),
             ])
             ->statePath('replyData');
     }
