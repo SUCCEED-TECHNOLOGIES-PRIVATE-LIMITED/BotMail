@@ -7,6 +7,7 @@ use App\Enums\MessageStatus;
 use App\Models\Inbox;
 use App\Models\Message;
 use App\Models\WebhookLog;
+use App\Services\InboxEventNotifier;
 use App\Support\EmailAddress;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -82,7 +83,7 @@ class ProcessInboundEmail implements ShouldQueue
         $references = $this->headerValue($headers, 'references');
         $threadId = $this->threadId($inbox, $messageId, $inReplyTo, $references);
 
-        Message::query()->create([
+        $message = Message::query()->create([
             'inbox_id' => $inbox->id,
             'direction' => MessageDirection::Inbound,
             'from_address' => EmailAddress::normalize(
@@ -104,6 +105,8 @@ class ProcessInboundEmail implements ShouldQueue
             'status' => MessageStatus::Received,
             'message_id' => $messageId,
         ]);
+
+        app(InboxEventNotifier::class)->received($message);
 
         WebhookLog::query()->whereKey($this->webhookLogId)->update([
             'status' => 'processed',

@@ -21,6 +21,8 @@ class Inbox extends Model
         'address',
         'local_part',
         'display_name',
+        'client_id',
+        'metadata',
         'status',
         'cloudflare_rule_id',
     ];
@@ -32,6 +34,7 @@ class Inbox extends Model
     {
         return [
             'status' => InboxStatus::class,
+            'metadata' => 'array',
         ];
     }
 

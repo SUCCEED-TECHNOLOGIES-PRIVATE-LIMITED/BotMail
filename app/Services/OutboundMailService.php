@@ -186,11 +186,13 @@ class OutboundMailService
                 'status' => MessageStatus::Sent,
             ]);
         } catch (Throwable $exception) {
-            Message::query()->create([
+            $failed = Message::query()->create([
                 ...$attributes,
                 'resend_id' => null,
                 'status' => MessageStatus::Failed,
             ]);
+
+            app(InboxEventNotifier::class)->rejected($failed, $exception->getMessage());
 
             throw $exception;
         }

@@ -6,6 +6,7 @@ use App\Enums\MessageStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Message;
 use App\Models\WebhookLog;
+use App\Services\InboxEventNotifier;
 use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -46,10 +47,28 @@ class ResendWebhookController extends Controller
             default => null,
         };
 
+        $messages = $emailId !== null
+            ? Message::query()->where('resend_id', $emailId)->get()
+            : collect();
+
         if ($status !== null && $emailId !== null) {
             Message::query()->where('resend_id', $emailId)->update([
                 'status' => $status->value,
             ]);
+        }
+
+        if ($status === MessageStatus::Bounced || $status === MessageStatus::Failed) {
+            $notifier = app(InboxEventNotifier::class);
+
+            foreach ($messages as $message) {
+                if ($status === MessageStatus::Bounced) {
+                    $notifier->bounced($message, $type);
+
+                    continue;
+                }
+
+                $notifier->rejected($message, $type);
+            }
         }
 
         WebhookLog::query()->create([

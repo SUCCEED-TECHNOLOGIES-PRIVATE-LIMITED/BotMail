@@ -6,23 +6,20 @@ use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
-class CheckApiKey
+class CheckBearerKey
 {
     public function handle(Request $request, Closure $next): Response
     {
         $configured = config('services.botmail.key');
-        $given = (string) $request->header('X-API-Key', '');
+        $authorization = (string) $request->header('Authorization', '');
+        $given = '';
 
-        if ($given === '') {
-            $authorization = (string) $request->header('Authorization', '');
-
-            if (preg_match('/^Bearer\s+(\S+)/i', $authorization, $matches) === 1) {
-                $given = $matches[1];
-            }
+        if (preg_match('/^Bearer\s+(\S+)/i', $authorization, $matches) === 1) {
+            $given = $matches[1];
         }
 
         if (! is_string($configured) || $configured === '' || ! hash_equals($configured, $given)) {
-            return response()->json(['message' => 'Unauthorized'], 401);
+            return response()->json(['message' => 'Forbidden'], 403);
         }
 
         return $next($request);

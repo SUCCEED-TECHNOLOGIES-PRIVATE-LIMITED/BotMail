@@ -42,4 +42,9 @@ return [
         'inbound_secret' => env('INBOUND_WEBHOOK_SECRET'),
     ],
 
+    'inbox_events' => [
+        'webhook_url' => env('BOTMAIL_WEBHOOK_URL'),
+        'webhook_secret' => env('BOTMAIL_WEBHOOK_SECRET'),
+    ],
+
 ];
