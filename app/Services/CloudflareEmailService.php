@@ -11,6 +11,7 @@ use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class CloudflareEmailService
 {
@@ -165,6 +166,99 @@ class CloudflareEmailService
         return $domain;
     }
 
+    /**
+     * Cloudflare's spam verdict is on the routing analytics event, not on the Worker payload.
+     * Null means the event was not available yet or the token cannot read analytics.
+     */
+    public function routingMessageIsSpam(Inbox $inbox, ?string $messageId): ?bool
+    {
+        $inbox->loadMissing('domain');
+        $zoneId = $inbox->domain?->cloudflare_zone_id;
+        $needle = $this->normalizeMessageId($messageId);
+
+        if (! is_string($zoneId) || $zoneId === '' || $needle === '') {
+            return null;
+        }
+
+        try {
+            $response = Http::withToken($this->tokenFor($inbox->domain?->user))
+                ->acceptJson()
+                ->timeout(15)
+                ->post('https://api.cloudflare.com/client/v4/graphql', [
+                    'query' => <<<'GQL'
+query ($zoneTag: string!, $start: Time!, $end: Time!) {
+  viewer {
+    zones(filter: { zoneTag: $zoneTag }) {
+      emailRoutingAdaptive(
+        filter: { datetime_geq: $start, datetime_leq: $end }
+        limit: 100
+        orderBy: [datetime_DESC]
+      ) {
+        messageId
+        to
+        isSpam
+      }
+    }
+  }
+}
+GQL,
+                    'variables' => [
+                        'zoneTag' => $zoneId,
+                        'start' => now()->subMinutes(30)->utc()->format('Y-m-d\TH:i:s\Z'),
+                        'end' => now()->addMinute()->utc()->format('Y-m-d\TH:i:s\Z'),
+                    ],
+                ]);
+        } catch (Throwable $exception) {
+            Log::warning('Cloudflare spam lookup failed', [
+                'inbox' => $inbox->address,
+                'error' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
+
+        $errors = $response->json('errors');
+
+        if (! $response->successful() || (is_array($errors) && $errors !== [])) {
+            Log::warning('Cloudflare spam lookup failed', [
+                'inbox' => $inbox->address,
+                'status' => $response->status(),
+                'message' => $this->errorMessage($response, 'read routing spam'),
+            ]);
+
+            return null;
+        }
+
+        $events = $response->json('data.viewer.zones.0.emailRoutingAdaptive');
+
+        if (! is_array($events)) {
+            return null;
+        }
+
+        $to = strtolower($inbox->address);
+
+        foreach ($events as $event) {
+            if (! is_array($event)) {
+                continue;
+            }
+
+            $id = $this->normalizeMessageId(is_string($event['messageId'] ?? null) ? $event['messageId'] : null);
+            $eventTo = strtolower(trim((string) ($event['to'] ?? '')));
+
+            if ($id === '' || $id !== $needle) {
+                continue;
+            }
+
+            if ($eventTo !== '' && $eventTo !== $to) {
+                continue;
+            }
+
+            return (int) ($event['isSpam'] ?? 0) === 1;
+        }
+
+        return null;
+    }
+
     public function tokenFor(?User $user): string
     {
         $token = $user?->cloudflare_api_token ?: config('services.cloudflare.token');
@@ -274,6 +368,11 @@ class CloudflareEmailService
     protected function routingIsReady(array $status): bool
     {
         return ($status['enabled'] ?? false) === true || ($status['status'] ?? null) === 'ready';
+    }
+
+    protected function normalizeMessageId(?string $messageId): string
+    {
+        return strtolower(trim((string) $messageId, "<> \t"));
     }
 
     protected function workerName(): string

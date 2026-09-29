@@ -6,6 +6,7 @@ use App\Models\Inbox;
 use App\Models\Message;
 use App\Models\WebhookLog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class CloudflareWebhookTest extends TestCase
@@ -32,6 +33,12 @@ class CloudflareWebhookTest extends TestCase
         $inbox = Inbox::factory()->create([
             'address' => 'agent@example.com',
             'local_part' => 'agent',
+        ]);
+
+        Http::fake([
+            'api.cloudflare.com/*' => Http::response([
+                'data' => ['viewer' => ['zones' => [['emailRoutingAdaptive' => []]]]],
+            ]),
         ]);
 
         $response = $this->postJson('/webhook/cloudflare', [
@@ -84,6 +91,12 @@ class CloudflareWebhookTest extends TestCase
             'local_part' => 'agent',
         ]);
 
+        Http::fake([
+            'api.cloudflare.com/*' => Http::response([
+                'data' => ['viewer' => ['zones' => [['emailRoutingAdaptive' => []]]]],
+            ]),
+        ]);
+
         $payload = [
             'from' => 'ada@example.com',
             'to' => 'agent@example.com',
@@ -117,5 +130,100 @@ class CloudflareWebhookTest extends TestCase
 
         $this->assertDatabaseCount('messages', 0);
         $this->assertDatabaseHas('webhook_logs', ['status' => 'ignored']);
+    }
+
+    public function test_cloudflare_spam_verdict_is_sent_as_spam(): void
+    {
+        config([
+            'services.inbox_events.webhook_url' => 'https://marketing.example/api/webhooks/botmail',
+            'services.inbox_events.webhook_secret' => 'whsec_dGVzdHNlY3JldA==',
+        ]);
+
+        Inbox::factory()->create([
+            'address' => 'agent@example.com',
+            'local_part' => 'agent',
+        ]);
+
+        Http::fake([
+            'api.cloudflare.com/*' => Http::response([
+                'data' => [
+                    'viewer' => [
+                        'zones' => [[
+                            'emailRoutingAdaptive' => [[
+                                'messageId' => '<spam@example.com>',
+                                'to' => 'agent@example.com',
+                                'isSpam' => 1,
+                            ]],
+                        ]],
+                    ],
+                ],
+            ]),
+            'marketing.example/*' => Http::response('ok', 200),
+        ]);
+
+        $this->withHeader('X-Webhook-Secret', 'test-webhook-secret')
+            ->postJson('/webhook/cloudflare', [
+                'from' => 'ada@example.com',
+                'to' => 'agent@example.com',
+                'subject' => 'Hello',
+                'text' => 'Hi',
+                'message_id' => '<spam@example.com>',
+            ])
+            ->assertStatus(202);
+
+        $this->assertDatabaseHas('messages', [
+            'message_id' => '<spam@example.com>',
+            'is_spam' => true,
+        ]);
+
+        Http::assertSent(function ($request): bool {
+            if (! str_contains($request->url(), 'marketing.example')) {
+                return false;
+            }
+
+            $body = $request->body();
+
+            return str_contains($body, 'message.received.spam')
+                && str_contains($body, '"spam"');
+        });
+    }
+
+    public function test_clean_cloudflare_verdict_stays_inbox(): void
+    {
+        Inbox::factory()->create([
+            'address' => 'agent@example.com',
+            'local_part' => 'agent',
+        ]);
+
+        Http::fake([
+            'api.cloudflare.com/*' => Http::response([
+                'data' => [
+                    'viewer' => [
+                        'zones' => [[
+                            'emailRoutingAdaptive' => [[
+                                'messageId' => '<clean@example.com>',
+                                'to' => 'agent@example.com',
+                                'isSpam' => 0,
+                            ]],
+                        ]],
+                    ],
+                ],
+            ]),
+        ]);
+
+        $this->withHeader('X-Webhook-Secret', 'test-webhook-secret')
+            ->postJson('/webhook/cloudflare', [
+                'from' => 'ada@example.com',
+                'to' => 'agent@example.com',
+                'subject' => 'Hello',
+                'text' => 'Hi',
+                'message_id' => '<clean@example.com>',
+            ])
+            ->assertStatus(202);
+
+        $this->assertDatabaseHas('messages', [
+            'message_id' => '<clean@example.com>',
+            'is_spam' => false,
+        ]);
     }
 }

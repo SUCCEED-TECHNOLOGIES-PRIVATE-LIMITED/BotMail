@@ -55,6 +55,21 @@ class MessageResource extends Resource
                     ->label('Inbox'),
                 Tables\Columns\TextColumn::make('direction')
                     ->badge(),
+                Tables\Columns\TextColumn::make('is_spam')
+                    ->label('Placement')
+                    ->badge()
+                    ->state(function (Message $record): string {
+                        if ($record->direction === MessageDirection::Outbound) {
+                            return 'Sent';
+                        }
+
+                        return $record->is_spam ? 'Spam' : 'Inbox';
+                    })
+                    ->color(fn (string $state): string => match ($state) {
+                        'Spam' => 'danger',
+                        'Sent' => 'gray',
+                        default => 'success',
+                    }),
                 Tables\Columns\IconColumn::make('is_read')
                     ->label('Read')
                     ->boolean(),

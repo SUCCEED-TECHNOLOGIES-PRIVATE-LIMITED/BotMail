@@ -27,7 +27,7 @@ class CloudflareWebhookController extends Controller
             'status' => 'queued',
         ]);
 
-        ProcessInboundEmail::dispatch($payload, $log->id);
+        ProcessInboundEmail::dispatch($payload, $log->id)->delay(now()->addSeconds(30));
 
         return response()->json(['message' => 'Accepted'], 202);
     }

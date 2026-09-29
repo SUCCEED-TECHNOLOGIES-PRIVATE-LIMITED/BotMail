@@ -35,6 +35,7 @@ class Message extends Model
         'is_read',
         'resend_id',
         'status',
+        'is_spam',
         'message_id',
         'created_at',
         'updated_at',
@@ -61,6 +62,7 @@ class Message extends Model
         'is_read',
         'resend_id',
         'status',
+        'is_spam',
         'message_id',
     ];
 
@@ -75,6 +77,7 @@ class Message extends Model
             'headers' => 'array',
             'attachments' => 'array',
             'is_read' => 'boolean',
+            'is_spam' => 'boolean',
         ];
     }
 

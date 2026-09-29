@@ -12,7 +12,7 @@ class InboxEventNotifier
 {
     public function received(Message $message): void
     {
-        $this->dispatch('message.received', [
+        $this->dispatch($message->is_spam ? 'message.received.spam' : 'message.received', [
             'message' => $this->messageFields($message),
         ]);
     }
@@ -92,7 +92,7 @@ class InboxEventNotifier
             'thread_id' => $message->thread_id,
             'from' => $message->from_address,
             'in_reply_to' => $message->in_reply_to,
-            'labels' => [],
+            'labels' => $message->is_spam ? ['spam'] : [],
         ];
     }
 

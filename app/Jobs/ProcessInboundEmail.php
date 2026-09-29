@@ -7,8 +7,10 @@ use App\Enums\MessageStatus;
 use App\Models\Inbox;
 use App\Models\Message;
 use App\Models\WebhookLog;
+use App\Services\CloudflareEmailService;
 use App\Services\InboxEventNotifier;
 use App\Support\EmailAddress;
+use App\Support\SpamClassifier;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Str;
@@ -103,6 +105,7 @@ class ProcessInboundEmail implements ShouldQueue
             'is_read' => false,
             'resend_id' => null,
             'status' => MessageStatus::Received,
+            'is_spam' => $this->isSpam($inbox, $headers, $messageId),
             'message_id' => $messageId,
         ]);
 
@@ -112,6 +115,22 @@ class ProcessInboundEmail implements ShouldQueue
             'status' => 'processed',
             'error' => null,
         ]);
+    }
+
+    /**
+     * @param  array<string, string>  $headers
+     */
+    protected function isSpam(Inbox $inbox, array $headers, ?string $messageId): bool
+    {
+        if (SpamClassifier::fromHeaders($headers)) {
+            return true;
+        }
+
+        try {
+            return app(CloudflareEmailService::class)->routingMessageIsSpam($inbox, $messageId) === true;
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     /**

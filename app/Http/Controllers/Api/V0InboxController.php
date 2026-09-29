@@ -254,8 +254,17 @@ class V0InboxController extends Controller
     }
 
     /**
-     * @return array<string, mixed>
+     * @return list<string>
      */
+    protected function labels(Message $message, ?MessageDirection $direction): array
+    {
+        if ($direction === MessageDirection::Outbound) {
+            return ['sent'];
+        }
+
+        return $message->is_spam ? ['spam'] : [];
+    }
+
     protected function inboxPayload(Inbox $inbox): array
     {
         return [
@@ -286,7 +295,7 @@ class V0InboxController extends Controller
             'from_' => $message->from_address,
             'preview' => Str::limit(trim((string) $message->body_text), 140, ''),
             'timestamp' => $message->created_at?->toIso8601String(),
-            'labels' => $direction === MessageDirection::Outbound ? ['sent'] : [],
+            'labels' => $this->labels($message, $direction),
         ];
 
         if (! $detailed) {
